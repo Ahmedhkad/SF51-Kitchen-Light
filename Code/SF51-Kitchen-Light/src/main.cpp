@@ -3,12 +3,9 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <ArduinoOTA.h>
-#include <AceButton.h>
 
 #include "settings.h" //GPIO defines, NodeMCU good-pin table
 #include "secret.h"   //Wifi and mqtt server info
-
-using namespace ace_button;
 
 const char *ssid = ssidWifi;       // defined on secret.h
 const char *password = passWifi;   // defined on secret.h
@@ -19,21 +16,22 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 
 boolean ButtonState = false;
-AceButton button(KitchenLightTouch);
 
 StaticJsonDocument<100> doc;
 StaticJsonDocument<300> updater;
 int device;
 int valuejson;
 
-boolean TouchEnable = false;
+boolean TouchEnable = true;
 int lastCount = 0;
 int count = 0;
 
+int blinker = 5;
+boolean touchState = false;
+
 unsigned long WifiDelayMillis = 0;
 const long WifiDelayInterval = 5000; // interval to check wifi and mqtt
-
-void handleEvent(AceButton*, uint8_t, uint8_t);
+unsigned long SwitchDelayMillis = 0;
 
 void setup_wifi()
 {
@@ -164,12 +162,26 @@ void setup()
   client.setServer(mqtt_server, mqttPORT);
   client.setCallback(callback);
 
-button.setEventHandler(handleEvent);
+// button.setEventHandler(handleEvent);
 
   ArduinoOTA.setHostname(mqttClient);
   ArduinoOTA.setPort(otaPort);
   ArduinoOTA.setPassword(otaPass);
   ArduinoOTA.begin();
+}
+
+void toggleSwitch(){
+  if(ButtonState){
+      digitalWrite(KitchenLightRelay, HIGH);
+      ButtonState = false;
+      client.publish("Kitchen-Light", "ON");
+  }
+  else{
+      digitalWrite(KitchenLightRelay, LOW);
+      client.publish("Kitchen-Light", "OFF");
+      ButtonState = true;
+    }
+
 }
 
 void loop()
@@ -195,28 +207,20 @@ void loop()
     }
   }
 
-  if(TouchEnable){
-    button.check();
+  if((!digitalRead(KitchenLightTouch)) && touchState && TouchEnable){
+    toggleSwitch();
+     touchState = false;
+     SwitchDelayMillis = currentMillis;
+  }
+ 
+ if (currentMillis - SwitchDelayMillis >= 1500) 
+  {
+    touchState = true;
   }
 
   client.loop();
 }
 
-void handleEvent(AceButton*, uint8_t eventType, uint8_t) {
-  switch (eventType) {
-    case AceButton::kEventPressed:
-      if(ButtonState){
-      digitalWrite(KitchenLightRelay, HIGH);
-      ButtonState = false;
-      client.publish("Kitchen-Light", "ON");
-      delay(3000);
-    }
-    else{
-      digitalWrite(KitchenLightRelay, LOW);
-      client.publish("Kitchen-Light", "OFF");
-      ButtonState = true;
-      delay(3000);
-    }
-      break;
-  }
-}
+
+
+ 
